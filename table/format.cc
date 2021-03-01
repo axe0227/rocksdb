@@ -14,7 +14,6 @@
 
 #include "block_fetcher.h"
 #include "file/random_access_file_reader.h"
-#include "logging/logging.h"
 #include "memory/memory_allocator.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
@@ -42,6 +41,7 @@ extern const uint64_t kPlainTableMagicNumber;
 const uint64_t kLegacyPlainTableMagicNumber = 0;
 const uint64_t kPlainTableMagicNumber = 0;
 #endif
+const char* kHostnameForDbHostId = "__hostname__";
 
 bool ShouldReportDetailedTime(Env* env, Statistics* stats) {
   return env != nullptr && stats != nullptr &&
@@ -307,8 +307,9 @@ Status ReadFooterFromFile(const IOOptions& opts, RandomAccessFileReader* file,
   // for iterator, TryReadFromCache might do a readahead. Revisit to see if we
   // need to pass a timeout at that point
   if (prefetch_buffer == nullptr ||
-      !prefetch_buffer->TryReadFromCache(
-          IOOptions(), read_offset, Footer::kMaxEncodedLength, &footer_input)) {
+      !prefetch_buffer->TryReadFromCache(IOOptions(), read_offset,
+                                         Footer::kMaxEncodedLength,
+                                         &footer_input, nullptr)) {
     if (file->use_direct_io()) {
       s = file->Read(opts, read_offset, Footer::kMaxEncodedLength,
                      &footer_input, nullptr, &internal_buf);
@@ -352,8 +353,9 @@ Status UncompressBlockContentsForCompressionType(
   assert(uncompression_info.type() != kNoCompression &&
          "Invalid compression type");
 
-  StopWatchNano timer(ioptions.env, ShouldReportDetailedTime(
-                                        ioptions.env, ioptions.statistics));
+  StopWatchNano timer(
+      ioptions.env->GetSystemClock(),
+      ShouldReportDetailedTime(ioptions.env, ioptions.statistics));
   size_t uncompressed_size = 0;
   CacheAllocationPtr ubuf =
       UncompressData(uncompression_info, data, n, &uncompressed_size,

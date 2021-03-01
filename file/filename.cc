@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <vector>
 #include "file/writable_file_writer.h"
-#include "logging/logging.h"
 #include "rocksdb/env.h"
 #include "test_util/sync_point.h"
 #include "util/stop_watch.h"
@@ -184,7 +183,8 @@ InfoLogPrefix::InfoLogPrefix(bool has_log_dir,
     snprintf(buf, sizeof(buf), kInfoLogPrefix);
     prefix = Slice(buf, sizeof(kInfoLogPrefix) - 1);
   } else {
-    size_t len = GetInfoLogPrefix(db_absolute_path, buf, sizeof(buf));
+    size_t len =
+        GetInfoLogPrefix(NormalizePath(db_absolute_path), buf, sizeof(buf));
     prefix = Slice(buf, len);
   }
 }
@@ -419,15 +419,17 @@ Status SetIdentityFile(Env* env, const std::string& dbname,
   return s;
 }
 
-IOStatus SyncManifest(Env* env, const ImmutableDBOptions* db_options,
+IOStatus SyncManifest(const std::shared_ptr<SystemClock>& clock,
+                      const ImmutableDBOptions* db_options,
                       WritableFileWriter* file) {
   TEST_KILL_RANDOM("SyncManifest:0", rocksdb_kill_odds * REDUCE_ODDS2);
-  StopWatch sw(env, db_options->statistics.get(), MANIFEST_FILE_SYNC_MICROS);
+  StopWatch sw(clock, db_options->statistics.get(), MANIFEST_FILE_SYNC_MICROS);
   return file->Sync(db_options->use_fsync);
 }
 
-Status GetInfoLogFiles(Env* env, const std::string& db_log_dir,
-                       const std::string& dbname, std::string* parent_dir,
+Status GetInfoLogFiles(const std::shared_ptr<FileSystem>& fs,
+                       const std::string& db_log_dir, const std::string& dbname,
+                       std::string* parent_dir,
                        std::vector<std::string>* info_log_list) {
   assert(parent_dir != nullptr);
   assert(info_log_list != nullptr);
@@ -443,7 +445,7 @@ Status GetInfoLogFiles(Env* env, const std::string& db_log_dir,
   InfoLogPrefix info_log_prefix(!db_log_dir.empty(), dbname);
 
   std::vector<std::string> file_names;
-  Status s = env->GetChildren(*parent_dir, &file_names);
+  Status s = fs->GetChildren(*parent_dir, IOOptions(), &file_names, nullptr);
 
   if (!s.ok()) {
     return s;

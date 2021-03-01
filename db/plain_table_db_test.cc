@@ -16,7 +16,6 @@
 #include "db/version_set.h"
 #include "db/write_batch_internal.h"
 #include "file/filename.h"
-#include "logging/logging.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
 #include "rocksdb/db.h"
@@ -39,7 +38,6 @@
 #include "util/string_util.h"
 #include "utilities/merge_operators.h"
 
-using std::unique_ptr;
 
 namespace ROCKSDB_NAMESPACE {
 class PlainTableKeyDecoderTest : public testing::Test {};
@@ -51,9 +49,9 @@ TEST_F(PlainTableKeyDecoderTest, ReadNonMmap) {
   Slice contents(tmp);
   test::StringSource* string_source =
       new test::StringSource(contents, 0, false);
-
+  std::unique_ptr<FSRandomAccessFile> holder(string_source);
   std::unique_ptr<RandomAccessFileReader> file_reader(
-      test::GetRandomAccessFileReader(string_source));
+      new RandomAccessFileReader(std::move(holder), "test"));
   std::unique_ptr<PlainTableReaderFileInfo> file_info(
       new PlainTableReaderFileInfo(std::move(file_reader), EnvOptions(),
                                    kLength));

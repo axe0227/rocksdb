@@ -50,14 +50,15 @@ void WriteBlobFile(const ImmutableCFOptions& immutable_cf_options,
 
   std::unique_ptr<WritableFileWriter> file_writer(
       new WritableFileWriter(std::move(file), blob_file_path, FileOptions(),
-                             immutable_cf_options.env));
+                             immutable_cf_options.env->GetSystemClock()));
 
   constexpr Statistics* statistics = nullptr;
   constexpr bool use_fsync = false;
+  constexpr bool do_flush = false;
 
-  BlobLogWriter blob_log_writer(std::move(file_writer),
-                                immutable_cf_options.env, statistics,
-                                blob_file_number, use_fsync);
+  BlobLogWriter blob_log_writer(
+      std::move(file_writer), immutable_cf_options.env->GetSystemClock(),
+      statistics, blob_file_number, use_fsync, do_flush);
 
   BlobLogHeader header(column_family_id, compression_type, has_ttl,
                        expiration_range_header);
@@ -141,9 +142,9 @@ TEST_F(BlobFileReaderTest, CreateReaderAndGetBlob) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  ASSERT_OK(BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                   column_family_id, blob_file_read_hist,
-                                   blob_file_number, &reader));
+  ASSERT_OK(BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader));
 
   // Make sure the blob can be retrieved with and without checksum verification
   ReadOptions read_options;
@@ -259,14 +260,15 @@ TEST_F(BlobFileReaderTest, Malformed) {
 
     std::unique_ptr<WritableFileWriter> file_writer(
         new WritableFileWriter(std::move(file), blob_file_path, FileOptions(),
-                               immutable_cf_options.env));
+                               immutable_cf_options.env->GetSystemClock()));
 
     constexpr Statistics* statistics = nullptr;
     constexpr bool use_fsync = false;
+    constexpr bool do_flush = false;
 
-    BlobLogWriter blob_log_writer(std::move(file_writer),
-                                  immutable_cf_options.env, statistics,
-                                  blob_file_number, use_fsync);
+    BlobLogWriter blob_log_writer(
+        std::move(file_writer), immutable_cf_options.env->GetSystemClock(),
+        statistics, blob_file_number, use_fsync, do_flush);
 
     BlobLogHeader header(column_family_id, kNoCompression, has_ttl,
                          expiration_range);
@@ -280,7 +282,8 @@ TEST_F(BlobFileReaderTest, Malformed) {
 
   ASSERT_TRUE(BlobFileReader::Create(immutable_cf_options, FileOptions(),
                                      column_family_id, blob_file_read_hist,
-                                     blob_file_number, &reader)
+                                     blob_file_number, nullptr /*IOTracer*/,
+                                     &reader)
                   .IsCorruption());
 }
 
@@ -313,7 +316,8 @@ TEST_F(BlobFileReaderTest, TTL) {
 
   ASSERT_TRUE(BlobFileReader::Create(immutable_cf_options, FileOptions(),
                                      column_family_id, blob_file_read_hist,
-                                     blob_file_number, &reader)
+                                     blob_file_number, nullptr /*IOTracer*/,
+                                     &reader)
                   .IsCorruption());
 }
 
@@ -351,7 +355,8 @@ TEST_F(BlobFileReaderTest, ExpirationRangeInHeader) {
 
   ASSERT_TRUE(BlobFileReader::Create(immutable_cf_options, FileOptions(),
                                      column_family_id, blob_file_read_hist,
-                                     blob_file_number, &reader)
+                                     blob_file_number, nullptr /*IOTracer*/,
+                                     &reader)
                   .IsCorruption());
 }
 
@@ -389,7 +394,8 @@ TEST_F(BlobFileReaderTest, ExpirationRangeInFooter) {
 
   ASSERT_TRUE(BlobFileReader::Create(immutable_cf_options, FileOptions(),
                                      column_family_id, blob_file_read_hist,
-                                     blob_file_number, &reader)
+                                     blob_file_number, nullptr /*IOTracer*/,
+                                     &reader)
                   .IsCorruption());
 }
 
@@ -427,7 +433,7 @@ TEST_F(BlobFileReaderTest, IncorrectColumnFamily) {
   ASSERT_TRUE(BlobFileReader::Create(immutable_cf_options, FileOptions(),
                                      incorrect_column_family_id,
                                      blob_file_read_hist, blob_file_number,
-                                     &reader)
+                                     nullptr /*IOTracer*/, &reader)
                   .IsCorruption());
 }
 
@@ -458,9 +464,9 @@ TEST_F(BlobFileReaderTest, BlobCRCError) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  ASSERT_OK(BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                   column_family_id, blob_file_read_hist,
-                                   blob_file_number, &reader));
+  ASSERT_OK(BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader));
 
   SyncPoint::GetInstance()->SetCallBack(
       "BlobFileReader::VerifyBlob:CheckBlobCRC", [](void* arg) {
@@ -514,9 +520,9 @@ TEST_F(BlobFileReaderTest, Compression) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  ASSERT_OK(BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                   column_family_id, blob_file_read_hist,
-                                   blob_file_number, &reader));
+  ASSERT_OK(BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader));
 
   // Make sure the blob can be retrieved with and without checksum verification
   ReadOptions read_options;
@@ -574,9 +580,9 @@ TEST_F(BlobFileReaderTest, UncompressionError) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  ASSERT_OK(BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                   column_family_id, blob_file_read_hist,
-                                   blob_file_number, &reader));
+  ASSERT_OK(BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader));
 
   SyncPoint::GetInstance()->SetCallBack(
       "BlobFileReader::UncompressBlobIfNeeded:TamperWithResult", [](void* arg) {
@@ -659,9 +665,9 @@ TEST_P(BlobFileReaderIOErrorTest, IOError) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  const Status s = BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                          column_family_id, blob_file_read_hist,
-                                          blob_file_number, &reader);
+  const Status s = BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader);
 
   const bool fail_during_create =
       (sync_point_ != "BlobFileReader::GetBlob:ReadFromFile");
@@ -739,9 +745,9 @@ TEST_P(BlobFileReaderDecodingErrorTest, DecodingError) {
 
   std::unique_ptr<BlobFileReader> reader;
 
-  const Status s = BlobFileReader::Create(immutable_cf_options, FileOptions(),
-                                          column_family_id, blob_file_read_hist,
-                                          blob_file_number, &reader);
+  const Status s = BlobFileReader::Create(
+      immutable_cf_options, FileOptions(), column_family_id,
+      blob_file_read_hist, blob_file_number, nullptr /*IOTracer*/, &reader);
 
   const bool fail_during_create =
       sync_point_ != "BlobFileReader::GetBlob:TamperWithResult";

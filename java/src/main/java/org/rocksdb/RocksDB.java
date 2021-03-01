@@ -3574,9 +3574,8 @@ public class RocksDB extends RocksObject {
       /* @Nullable */final ColumnFamilyHandle columnFamilyHandle,
       final MutableColumnFamilyOptions mutableColumnFamilyOptions)
       throws RocksDBException {
-    setOptions(nativeHandle_, columnFamilyHandle.nativeHandle_,
-        mutableColumnFamilyOptions.getKeys(),
-        mutableColumnFamilyOptions.getValues());
+    setOptions(nativeHandle_, columnFamilyHandle == null ? 0 : columnFamilyHandle.nativeHandle_,
+        mutableColumnFamilyOptions.getKeys(), mutableColumnFamilyOptions.getValues());
   }
 
   /**
@@ -4123,7 +4122,7 @@ public class RocksDB extends RocksObject {
    *
    * @return the column family metadata
    */
-  public ColumnFamilyMetaData GetColumnFamilyMetaData() {
+  public ColumnFamilyMetaData getColumnFamilyMetaData() {
     return getColumnFamilyMetaData(null);
   }
 

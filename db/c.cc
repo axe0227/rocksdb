@@ -60,7 +60,6 @@ using ROCKSDB_NAMESPACE::ColumnFamilyDescriptor;
 using ROCKSDB_NAMESPACE::ColumnFamilyHandle;
 using ROCKSDB_NAMESPACE::ColumnFamilyOptions;
 using ROCKSDB_NAMESPACE::CompactionFilter;
-using ROCKSDB_NAMESPACE::CompactionFilterContext;
 using ROCKSDB_NAMESPACE::CompactionFilterFactory;
 using ROCKSDB_NAMESPACE::CompactionOptionsFIFO;
 using ROCKSDB_NAMESPACE::CompactRangeOptions;
@@ -82,7 +81,6 @@ using ROCKSDB_NAMESPACE::LiveFileMetaData;
 using ROCKSDB_NAMESPACE::Logger;
 using ROCKSDB_NAMESPACE::MemoryUtil;
 using ROCKSDB_NAMESPACE::MergeOperator;
-using ROCKSDB_NAMESPACE::MergeOperators;
 using ROCKSDB_NAMESPACE::NewBloomFilterPolicy;
 using ROCKSDB_NAMESPACE::NewGenericRateLimiter;
 using ROCKSDB_NAMESPACE::NewLRUCache;
@@ -115,10 +113,8 @@ using ROCKSDB_NAMESPACE::WriteBatch;
 using ROCKSDB_NAMESPACE::WriteBatchWithIndex;
 using ROCKSDB_NAMESPACE::WriteOptions;
 
-using std::shared_ptr;
 using std::vector;
 using std::unordered_set;
-using std::map;
 
 extern "C" {
 
@@ -1392,34 +1388,39 @@ char* rocksdb_property_value_cf(
   }
 }
 
-void rocksdb_approximate_sizes(
-    rocksdb_t* db,
-    int num_ranges,
-    const char* const* range_start_key, const size_t* range_start_key_len,
-    const char* const* range_limit_key, const size_t* range_limit_key_len,
-    uint64_t* sizes) {
+void rocksdb_approximate_sizes(rocksdb_t* db, int num_ranges,
+                               const char* const* range_start_key,
+                               const size_t* range_start_key_len,
+                               const char* const* range_limit_key,
+                               const size_t* range_limit_key_len,
+                               uint64_t* sizes, char** errptr) {
   Range* ranges = new Range[num_ranges];
   for (int i = 0; i < num_ranges; i++) {
     ranges[i].start = Slice(range_start_key[i], range_start_key_len[i]);
     ranges[i].limit = Slice(range_limit_key[i], range_limit_key_len[i]);
   }
-  db->rep->GetApproximateSizes(ranges, num_ranges, sizes);
+  Status s = db->rep->GetApproximateSizes(ranges, num_ranges, sizes);
+  if (!s.ok()) {
+    SaveError(errptr, s);
+  }
   delete[] ranges;
 }
 
 void rocksdb_approximate_sizes_cf(
-    rocksdb_t* db,
-    rocksdb_column_family_handle_t* column_family,
-    int num_ranges,
-    const char* const* range_start_key, const size_t* range_start_key_len,
-    const char* const* range_limit_key, const size_t* range_limit_key_len,
-    uint64_t* sizes) {
+    rocksdb_t* db, rocksdb_column_family_handle_t* column_family,
+    int num_ranges, const char* const* range_start_key,
+    const size_t* range_start_key_len, const char* const* range_limit_key,
+    const size_t* range_limit_key_len, uint64_t* sizes, char** errptr) {
   Range* ranges = new Range[num_ranges];
   for (int i = 0; i < num_ranges; i++) {
     ranges[i].start = Slice(range_start_key[i], range_start_key_len[i]);
     ranges[i].limit = Slice(range_limit_key[i], range_limit_key_len[i]);
   }
-  db->rep->GetApproximateSizes(column_family->rep, ranges, num_ranges, sizes);
+  Status s = db->rep->GetApproximateSizes(column_family->rep, ranges,
+                                          num_ranges, sizes);
+  if (!s.ok()) {
+    SaveError(errptr, s);
+  }
   delete[] ranges;
 }
 
@@ -2773,6 +2774,14 @@ void rocksdb_options_set_bottommost_compression_options_zstd_max_train_bytes(
   opt->rep.bottommost_compression_opts.enabled = enabled;
 }
 
+void rocksdb_options_set_bottommost_compression_options_max_dict_buffer_bytes(
+    rocksdb_options_t* opt, uint64_t max_dict_buffer_bytes,
+    unsigned char enabled) {
+  opt->rep.bottommost_compression_opts.max_dict_buffer_bytes =
+      max_dict_buffer_bytes;
+  opt->rep.bottommost_compression_opts.enabled = enabled;
+}
+
 void rocksdb_options_set_compression_options(rocksdb_options_t* opt, int w_bits,
                                              int level, int strategy,
                                              int max_dict_bytes) {
@@ -2785,6 +2794,11 @@ void rocksdb_options_set_compression_options(rocksdb_options_t* opt, int w_bits,
 void rocksdb_options_set_compression_options_zstd_max_train_bytes(
     rocksdb_options_t* opt, int zstd_max_train_bytes) {
   opt->rep.compression_opts.zstd_max_train_bytes = zstd_max_train_bytes;
+}
+
+void rocksdb_options_set_compression_options_max_dict_buffer_bytes(
+    rocksdb_options_t* opt, uint64_t max_dict_buffer_bytes) {
+  opt->rep.compression_opts.max_dict_buffer_bytes = max_dict_buffer_bytes;
 }
 
 void rocksdb_options_set_prefix_extractor(
@@ -3933,6 +3947,25 @@ void rocksdb_readoptions_set_ignore_range_deletions(
 unsigned char rocksdb_readoptions_get_ignore_range_deletions(
     rocksdb_readoptions_t* opt) {
   return opt->rep.ignore_range_deletions;
+}
+
+void rocksdb_readoptions_set_deadline(rocksdb_readoptions_t* opt,
+                                      uint64_t microseconds) {
+  opt->rep.deadline = std::chrono::microseconds(microseconds);
+}
+
+uint64_t rocksdb_readoptions_get_deadline(rocksdb_readoptions_t* opt) {
+  return opt->rep.deadline.count();
+}
+
+void rocksdb_readoptions_set_io_timeout(rocksdb_readoptions_t* opt,
+                                        uint64_t microseconds) {
+  opt->rep.io_timeout = std::chrono::microseconds(microseconds);
+}
+
+extern ROCKSDB_LIBRARY_API uint64_t
+rocksdb_readoptions_get_io_timeout(rocksdb_readoptions_t* opt) {
+  return opt->rep.io_timeout.count();
 }
 
 rocksdb_writeoptions_t* rocksdb_writeoptions_create() {
